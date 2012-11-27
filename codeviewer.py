@@ -31,6 +31,12 @@ class OffsetList:
             offset += self.insertions[key_pos]
         return offset + pos
 
+    def get_insertion_length(self, pos):
+        """Return the length of the data inserted at pos."""
+        if pos in self.insertions:
+            return self.insertions[pos]
+        return 0
+
 class TestOffsetList(unittest.TestCase):
     def test_insert(self):
         ol = OffsetList()
@@ -58,11 +64,28 @@ class Rewriter:
         self.col_offs = [OffsetList()] * len(self.lines)
 
     def insert_before(self, line, col, text):
-        """Insert text before the given line/column."""
+        """Insert text at the given line/column.
+        
+        If text has already been inserted there, the new text will go at the
+        beginning of the existing text.
+        """
         theline = self.lines[line]
         col_off = self.col_offs[line]
-        col = col_off.get_rewritten_pos(col)
-        self.lines[line] = theline[:col] + text + theline[col:]
+        adj_col = (col_off.get_rewritten_pos(col) -
+                col_off.get_insertion_length(col))
+        self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
+        col_off.insert(col, len(text))
+
+    def insert_after(self, line, col, text):
+        """Insert text at the given line/column.
+        
+        If text has already been inserted there, the new text will go at the
+        end of the existing text.
+        """
+        theline = self.lines[line]
+        col_off = self.col_offs[line]
+        adj_col = col_off.get_rewritten_pos(col)
+        self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
 
     @property
@@ -87,6 +110,18 @@ class TestRewriter(unittest.TestCase):
         # Now try the very end.
         rw.insert_before(line=0, col=4, text="!")
         self.assertEqual(rw.lines[0], "t%%%e_s$$t!")
+
+    def test_before_after(self):
+        rw = Rewriter("0123")
+        rw.insert_before(line=0, col=2, text="b")
+        self.assertEqual(rw.lines[0], "01b23")
+        
+        rw.insert_before(line=0, col=2, text="a")
+        self.assertEqual(rw.lines[0], "01ab23")
+
+        rw.insert_after(line=0, col=2, text="c")
+        self.assertEqual(rw.lines[0], "01abc23")
+
 
 def find_cursor_kind(node, kind):
     """Return a list of all nodex with the given cursor kind.
