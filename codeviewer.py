@@ -159,14 +159,26 @@ def format_source(src_filename, src, tu, tpl_filename):
     with open(tpl_filename, 'r') as tpl_file:
         tpl = Template(tpl_file.read())
 
-    lines = [line + '<br/>' for line in src.splitlines()]
+    rw = Rewriter(src)
 
     fn_decls = [node for node in
                 find_cursor_kind(tu.cursor, cindex.CursorKind.FUNCTION_DECL) 
                 if node.location.file.name == src_filename]
-    print(fn_decls)
+    for fd in fn_decls:
+        if not fd.is_definition():
+            continue
+        
+        start = fd.extent.start
+        end = fd.extent.end
+        rw.insert_before('<div class="function_decl">',
+                         start.line-1,
+                         start.column-1)
+        rw.insert_after('</div>', end.line-1, end.column-1)
 
-    code = ''.join(lines)
+    for line in range(len(rw.lines)):
+        rw.insert_after("<br />", line=line, col=-1)
+
+    code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
                           code=code)
