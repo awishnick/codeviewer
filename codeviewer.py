@@ -63,7 +63,7 @@ class Rewriter:
         self.lines = buf.splitlines()
         self.col_offs = [OffsetList()] * len(self.lines)
 
-    def insert_before(self, line, col, text):
+    def insert_before(self, text, line, col):
         """Insert text at the given line/column.
         
         If text has already been inserted there, the new text will go at the
@@ -76,7 +76,7 @@ class Rewriter:
         self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
 
-    def insert_after(self, line, col, text):
+    def insert_after(self, text, line, col):
         """Insert text at the given line/column.
         
         If text has already been inserted there, the new text will go at the
@@ -96,30 +96,30 @@ class Rewriter:
 class TestRewriter(unittest.TestCase):
     def test_single_line(self):
         rw = Rewriter("test")
-        rw.insert_before(line=0, col=2, text="_")
+        rw.insert_before("_", line=0, col=2)
         self.assertEqual(rw.lines[0], "te_st")
 
         # Now inserting after where we already did should be properly offset.
-        rw.insert_before(line=0, col=3, text="$$")
+        rw.insert_before("$$", line=0, col=3)
         self.assertEqual(rw.lines[0], "te_s$$t")
 
         # Now try inserting before either point.
-        rw.insert_before(line=0, col=1, text="%%%")
+        rw.insert_before("%%%", line=0, col=1)
         self.assertEqual(rw.lines[0], "t%%%e_s$$t")
 
         # Now try the very end.
-        rw.insert_before(line=0, col=4, text="!")
+        rw.insert_before("!", line=0, col=4)
         self.assertEqual(rw.lines[0], "t%%%e_s$$t!")
 
     def test_before_after(self):
         rw = Rewriter("0123")
-        rw.insert_before(line=0, col=2, text="b")
+        rw.insert_before("b", line=0, col=2)
         self.assertEqual(rw.lines[0], "01b23")
         
-        rw.insert_before(line=0, col=2, text="a")
+        rw.insert_before("a", line=0, col=2)
         self.assertEqual(rw.lines[0], "01ab23")
 
-        rw.insert_after(line=0, col=2, text="c")
+        rw.insert_after("c", line=0, col=2)
         self.assertEqual(rw.lines[0], "01abc23")
 
 
