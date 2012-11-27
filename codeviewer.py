@@ -62,6 +62,7 @@ class Rewriter:
         """Initialize with the initial buffer."""
         self.lines = buf.splitlines()
         self.col_offs = [OffsetList()] * len(self.lines)
+        self.col_lens = [len(line) for line in self.lines]
 
     def insert_before(self, text, line, col):
         """Insert text at the given line/column.
@@ -70,6 +71,7 @@ class Rewriter:
         beginning of the existing text.
         """
         theline = self.lines[line]
+        col = self.canonicalize_column_index(line, col)
         col_off = self.col_offs[line]
         adj_col = (col_off.get_rewritten_pos(col) -
                 col_off.get_insertion_length(col))
@@ -83,10 +85,18 @@ class Rewriter:
         end of the existing text.
         """
         theline = self.lines[line]
+        col = self.canonicalize_column_index(line, col)
         col_off = self.col_offs[line]
         adj_col = col_off.get_rewritten_pos(col)
         self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
+
+    def canonicalize_column_index(self, line, col):
+        """If the column index is negative, wrap it around to be positive."""
+        if col < 0:
+            col += self.col_lens[line] + 1
+        assert col >= 0
+        return col
 
     @property
     def lines(self):
@@ -121,6 +131,11 @@ class TestRewriter(unittest.TestCase):
 
         rw.insert_after("c", line=0, col=2)
         self.assertEqual(rw.lines[0], "01abc23")
+
+    def test_negative_col(self):
+        rw = Rewriter("0123")
+        rw.insert_before("4", line=0, col=-1)
+        self.assertEqual(rw.lines[0], "01234")
 
 
 def find_cursor_kind(node, kind):
