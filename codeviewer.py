@@ -15,6 +15,10 @@ class OffsetList:
         # the given position.
         self.insertions = {}
 
+        # The removals map from positions where the removal begins to the length
+        # of the text that was removed.
+        self.removals = {}
+
     def insert(self, pos, length):
         """Insert some data at the given position."""
         if pos in self.insertions:
@@ -29,13 +33,29 @@ class OffsetList:
             if key_pos > pos:
                 break
             offset += self.insertions[key_pos]
-        return offset + pos
+
+        for key_pos in self.removals:
+            if key_pos > pos:
+                break
+            offset -= self.removals[key_pos]
+
+        new_pos = offset + pos
+        if new_pos < 0:
+            return None
+        return new_pos
 
     def get_insertion_length(self, pos):
         """Return the length of the data inserted at pos."""
         if pos in self.insertions:
             return self.insertions[pos]
         return 0
+
+    def remove(self, pos, length):
+        """Remove some data from the given position."""
+        if pos in self.removals:
+            self.removals[pos] += length
+        else:
+            self.removals[pos] = length
 
 class TestOffsetList(unittest.TestCase):
     def test_insert(self):
@@ -54,6 +74,17 @@ class TestOffsetList(unittest.TestCase):
         for i in range(2, 5):
             self.assertEqual(ol.get_rewritten_pos(i), i+5)
 
+    def test_remove(self):
+        ol = OffsetList()
+
+        # Remove two characters from the beginning.
+        # 234
+        ol.remove(0, 2)
+        for i in range(2):
+            self.assertEqual(ol.get_rewritten_pos(i), None)
+        for i in range(2, 5):
+            self.assertEqual(ol.get_rewritten_pos(i), i-2)
+
 class Rewriter:
     """Rewrite buffers of text, using line/column coordinates.
     """
@@ -70,11 +101,11 @@ class Rewriter:
         If text has already been inserted there, the new text will go at the
         beginning of the existing text.
         """
-        theline = self.lines[line]
         col = self.canonicalize_column_index(line, col)
         col_off = self.col_offs[line]
         adj_col = (col_off.get_rewritten_pos(col) -
                 col_off.get_insertion_length(col))
+        theline = self.lines[line]
         self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
 
@@ -84,12 +115,25 @@ class Rewriter:
         If text has already been inserted there, the new text will go at the
         end of the existing text.
         """
-        theline = self.lines[line]
         col = self.canonicalize_column_index(line, col)
         col_off = self.col_offs[line]
         adj_col = col_off.get_rewritten_pos(col)
+        theline = self.lines[line]
         self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
+
+    def remove(self, from_line, from_col, to_line, to_col):
+        """Remove the given range of text."""
+        assert from_line == to_line
+        from_col = self.canonicalize_column_index(from_line, from_col)
+        to_col = self.canonicalize_column_index(to_line, to_col)
+
+        col_off = self.col_offs[from_line]
+        adj_from_col = col_off.get_rewritten_pos(from_col)
+        adj_to_col = col_off.get_rewritten_pos(to_col)
+        theline = self.lines[from_line]
+        self.lines[from_line] = theline[:from_col] + theline[to_col:]
+        col_off.remove(from_col, to_col-from_col+1)
 
     def canonicalize_column_index(self, line, col):
         """If the column index is negative, wrap it around to be positive."""
@@ -137,6 +181,10 @@ class TestRewriter(unittest.TestCase):
         rw.insert_before("4", line=0, col=-1)
         self.assertEqual(rw.lines[0], "01234")
 
+    def test_remove(self):
+        rw = Rewriter("012345")
+        rw.remove(from_line=0, from_col=2, to_line=0, to_col=4)
+        self.assertEqual(rw.lines[0], "0145")
 
 def find_cursor_kind(node, kind):
     """Return a list of all nodex with the given cursor kind.
