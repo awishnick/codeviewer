@@ -5,48 +5,48 @@ import clang.cindex as cindex
 from string import Template
 import bisect
 import unittest
+import pdb
 
 class OffsetList:
-    """Hold offsets from original positions in text to rewritten ones."""
+    """Compute offsets from original positions in text to rewritten ones."""
     def __init__(self):
         """Initialize with no changes."""
-        # The list of offsets is a map from original position to rewritten
-        # position.
-        self.offs = [(0, 0)]
+        # The insertions map from positions to the lengths of the insertion at
+        # the given position.
+        self.insertions = {}
 
-    def lower_bound(self, pos):
-        """Return the index of the  largest original position op such that
-        op <= pos"""
-        return bisect.bisect_left(self.offs, (pos, 0))
-
-    def insert_before(self, pos, length):
-        """Insert some data before the given position."""
-        idx = self.lower_bound(pos)
-        off = self.offs[min(idx, len(self.offs)-1)]
-        if off[0] == pos:
-            self.offs[idx] = (pos, off[1]+length)
+    def insert(self, pos, length):
+        """Insert some data at the given position."""
+        if pos in self.insertions:
+            self.insertions[pos] += length
         else:
-            self.offs.insert(idx, (pos, pos-off[0]+off[1]+length))
+            self.insertions[pos] = length
 
     def get_rewritten_pos(self, pos):
         """Return the rewritten position given an original position."""
-        idx = self.lower_bound(pos)
-        off = self.offs[min(idx, len(self.offs)-1)]
-        return pos - off[0] + off[1]
+        offset = 0
+        for key_pos in self.insertions:
+            if key_pos > pos:
+                break
+            offset += self.insertions[key_pos]
+        return offset + pos
 
 class TestOffsetList(unittest.TestCase):
-    def test_insert_before(self):
+    def test_insert(self):
         ol = OffsetList()
 
         # Inserting before the beginning should offset everything.
         # ____01234
-        ol.insert_before(0, 4)
-        self.assertEqual(ol.offs[0], (0, 4))
+        ol.insert(0, 4)
+        for i in range(5):
+            self.assertEqual(ol.get_rewritten_pos(i), i+4)
 
         # ____01_234
-        ol.insert_before(2, 1)
-        self.assertEqual(ol.offs[0], (0, 4))
-        self.assertEqual(ol.offs[1], (2, 7))
+        ol.insert(2, 1)
+        for i in range(2):
+            self.assertEqual(ol.get_rewritten_pos(i), i+4)
+        for i in range(2, 5):
+            self.assertEqual(ol.get_rewritten_pos(i), i+5)
 
 class Rewriter:
     """Rewrite buffers of text, using line/column coordinates.
@@ -62,7 +62,8 @@ class Rewriter:
         theline = self.lines[line]
         col_off = self.col_offs[line]
         col = col_off.get_rewritten_pos(col)
-        self.lines[line] = theline[:col-1] + text + theline[col-1:]
+        self.lines[line] = theline[:col] + text + theline[col:]
+        col_off.insert(col, len(text))
 
     @property
     def lines(self):
@@ -72,12 +73,20 @@ class Rewriter:
 class TestRewriter(unittest.TestCase):
     def test_single_line(self):
         rw = Rewriter("test")
-        rw.insert_before(0, 3, "_")
+        rw.insert_before(line=0, col=2, text="_")
         self.assertEqual(rw.lines[0], "te_st")
 
         # Now inserting after where we already did should be properly offset.
-        rw.insert_before(0, 4, "$$")
-        #self.assertEqual(rw.lines[0], "te_s$$t")
+        rw.insert_before(line=0, col=3, text="$$")
+        self.assertEqual(rw.lines[0], "te_s$$t")
+
+        # Now try inserting before either point.
+        rw.insert_before(line=0, col=1, text="%%%")
+        self.assertEqual(rw.lines[0], "t%%%e_s$$t")
+
+        # Now try the very end.
+        rw.insert_before(line=0, col=4, text="!")
+        self.assertEqual(rw.lines[0], "t%%%e_s$$t!")
 
 def find_cursor_kind(node, kind):
     """Return a list of all nodex with the given cursor kind.
