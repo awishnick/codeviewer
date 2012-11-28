@@ -13,3 +13,6 @@ code {
 .error {
   background-color: #ff99b3;
 }
+.string_literal {
+  color: #2a2;
+}
