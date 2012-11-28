@@ -278,11 +278,13 @@ def format_source(src_filename, src, tu, tpl_filename):
 
     for (line, diags) in get_line_diagnostics(tu).iteritems():
         used_classes = set()
+        messages = '<br />'.join([diag[1] for diag in diags])
         for (diag_class, message) in diags:
             if diag_class in used_classes:
                 continue
             used_classes.add(diag_class)
-            rw.insert_before('<span class="{}">'.format(diag_class),
+            rw.insert_before('<span class="{}" title="{}">'.format(diag_class,
+                                                                  messages),
                              line-1,
                              0)
             rw.insert_after('</span>', line-1, -1)
@@ -305,6 +307,7 @@ def format_source(src_filename, src, tu, tpl_filename):
     code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
+                          webpath='web',
                           code=code)
 
 def main(argv):
