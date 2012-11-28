@@ -2,5 +2,10 @@ body {
   background-color: white;
 }
 .function_decl {
-  background-color: #eee;
+}
+.warning {
+  background-color: #ffe699;
+}
+.error {
+  background-color: #ff99b3;
 }

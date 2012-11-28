@@ -230,6 +230,31 @@ def find_cursor_kind(node, kind):
 
     return found
 
+def get_line_diagnostics(tu):
+    """Return a dictionary mapping line numbers to a list of diagnostics.
+
+    Each diagnostic is a tuple of (diag_class, message).
+    """
+    diags = {}
+    for diag in tu.diagnostics:
+        if diag.severity < cindex.Diagnostic.Warning:
+            continue
+
+        if diag.severity >= cindex.Diagnostic.Error:
+            diag_class = 'error'
+        else:
+            diag_class = 'warning'
+
+        diag_tup = (diag_class, diag.spelling)
+        line = diag.location.line
+
+        if line in diags:
+            diags[line].append(diag_tup)
+        else:
+            diags[line] = [diag_tup]
+
+    return diags
+
 def format_source(src_filename, src, tu, tpl_filename):
     """Format source code as HTML using the given template file.
     """
@@ -250,6 +275,18 @@ def format_source(src_filename, src, tu, tpl_filename):
 
     for (text, from_line, from_col, to_line, to_col) in replacements:
         rw.replace(text, from_line, from_col, to_line, to_col)
+
+    for (line, diags) in get_line_diagnostics(tu).iteritems():
+        used_classes = set()
+        for (diag_class, message) in diags:
+            if diag_class in used_classes:
+                continue
+            used_classes.add(diag_class)
+            rw.insert_before('<div class="{}">'.format(diag_class),
+                             line-1,
+                             0)
+            rw.insert_after('</div>', line-1, -1)
+
 
     fn_decls = [node for node in
                 find_cursor_kind(tu.cursor, cindex.CursorKind.FUNCTION_DECL) 
@@ -274,7 +311,8 @@ def main(argv):
     src_filename = argv[1]
 
     index = cindex.Index.create()
-    tu = index.parse(src_filename)
+    clang_args = ['-Wall', '-Wextra']
+    tu = index.parse(src_filename, args=clang_args)
 
     with open(src_filename, 'r') as src_file:
         src = src_file.read()
