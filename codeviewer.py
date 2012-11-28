@@ -5,6 +5,7 @@ import clang.cindex as cindex
 from string import Template
 import bisect
 import unittest
+import re
 import pdb
 
 class OffsetList:
@@ -18,6 +19,10 @@ class OffsetList:
         # The removals map from positions where the removal begins to the length
         # of the text that was removed.
         self.removals = {}
+
+    def __repr__(self):
+        return str('insertions = {}, removals = {}'.format(self.insertions,
+                                                           self.removals))
 
     def insert(self, pos, length):
         """Insert some data at the given position."""
@@ -35,14 +40,11 @@ class OffsetList:
             offset += self.insertions[key_pos]
 
         for key_pos in self.removals:
-            if key_pos > pos:
+            if key_pos >= pos:
                 break
             offset -= self.removals[key_pos]
 
-        new_pos = offset + pos
-        if new_pos < 0:
-            return None
-        return new_pos
+        return max(offset + pos, 0)
 
     def get_insertion_length(self, pos):
         """Return the length of the data inserted at pos."""
@@ -81,7 +83,7 @@ class TestOffsetList(unittest.TestCase):
         # 234
         ol.remove(0, 2)
         for i in range(2):
-            self.assertEqual(ol.get_rewritten_pos(i), None)
+            self.assertEqual(ol.get_rewritten_pos(i), 0)
         for i in range(2, 5):
             self.assertEqual(ol.get_rewritten_pos(i), i-2)
 
@@ -92,8 +94,11 @@ class Rewriter:
     def __init__(self, buf):
         """Initialize with the initial buffer."""
         self.lines = buf.splitlines()
-        self.col_offs = [OffsetList()] * len(self.lines)
+        self.col_offs = [OffsetList() for i in range(len(self.lines))]
         self.col_lens = [len(line) for line in self.lines]
+
+    def __repr__(self):
+        return str(self.col_offs)
 
     def insert_before(self, text, line, col):
         """Insert text at the given line/column.
@@ -132,8 +137,13 @@ class Rewriter:
         adj_from_col = col_off.get_rewritten_pos(from_col)
         adj_to_col = col_off.get_rewritten_pos(to_col)
         theline = self.lines[from_line]
-        self.lines[from_line] = theline[:from_col] + theline[to_col:]
-        col_off.remove(from_col, to_col-from_col+1)
+        self.lines[from_line] = theline[:adj_from_col] + theline[adj_to_col:]
+        col_off.remove(from_col, to_col-from_col)
+
+    def replace(self, text, from_line, from_col, to_line, to_col):
+        """Replace the given range of text."""
+        self.remove(from_line, from_col, to_line, to_col)
+        self.insert_after(text, from_line, from_col)
 
     def canonicalize_column_index(self, line, col):
         """If the column index is negative, wrap it around to be positive."""
@@ -186,6 +196,25 @@ class TestRewriter(unittest.TestCase):
         rw.remove(from_line=0, from_col=2, to_line=0, to_col=4)
         self.assertEqual(rw.lines[0], "0145")
 
+    def test_replace(self):
+        rw = Rewriter("01xx45")
+        rw.replace("23", from_line=0, from_col=2, to_line=0, to_col=4)
+        self.assertEqual(rw.lines[0], "012345")
+
+    def test_two_replacements(self):
+        rw = Rewriter("#include <iostream>")
+        rw.replace("&lt;", 0, 9, 0, 10)
+        self.assertEqual(rw.lines[0], "#include &lt;iostream>")
+        rw.replace("&gt;", 0, 18, 0, 19)
+        self.assertEqual(rw.lines[0], "#include &lt;iostream&gt;")
+
+    def test_two_consecutive_replacements(self):
+        rw = Rewriter('  std::cout << "Hello, world!";')
+        rw.replace("&lt;", 0, 12, 0, 13)
+        self.assertEqual(rw.lines[0], '  std::cout &lt;< "Hello, world!";')
+        rw.replace("&lt;", 0, 13, 0, 14)
+        self.assertEqual(rw.lines[0], '  std::cout &lt;&lt; "Hello, world!";')
+
 def find_cursor_kind(node, kind):
     """Return a list of all nodex with the given cursor kind.
     """
@@ -208,6 +237,19 @@ def format_source(src_filename, src, tu, tpl_filename):
         tpl = Template(tpl_file.read())
 
     rw = Rewriter(src)
+
+    # Generate a list of whitespace, <>, etc, to rewrite, and do it all at once.
+    # This is because we're searching by position in the rewriter's buffer,
+    # which will get changed once we rewrite it.
+    replacements = []
+    for (line, text) in enumerate(rw.lines):
+        for col in [m.start() for m in re.finditer('<', text)]:
+            replacements.append(("&lt;", line, col, line, col+1))
+        for col in [m.start() for m in re.finditer('>', text)]:
+            replacements.append(("&gt;", line, col, line, col+1))
+
+    for (text, from_line, from_col, to_line, to_col) in replacements:
+        rw.replace(text, from_line, from_col, to_line, to_col)
 
     fn_decls = [node for node in
                 find_cursor_kind(tu.cursor, cindex.CursorKind.FUNCTION_DECL) 
