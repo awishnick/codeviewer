@@ -8,7 +8,12 @@
   </head>
   <script>
     $$(function(){
-      $$(".warning").tipTip();
+      var options = {
+        maxWidth: "500px",
+        delay: 100,
+      };
+      $$(".warning").tipTip(options);
+      $$(".error").tipTip(options);
     });
   </script>
   <body>

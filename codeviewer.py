@@ -278,7 +278,7 @@ def format_source(src_filename, src, tu, tpl_filename):
 
     for (line, diags) in get_line_diagnostics(tu).iteritems():
         used_classes = set()
-        messages = '<br />'.join([diag[1] for diag in diags])
+        messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
         for (diag_class, message) in diags:
             if diag_class in used_classes:
                 continue
