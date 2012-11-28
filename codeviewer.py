@@ -282,10 +282,10 @@ def format_source(src_filename, src, tu, tpl_filename):
             if diag_class in used_classes:
                 continue
             used_classes.add(diag_class)
-            rw.insert_before('<div class="{}">'.format(diag_class),
+            rw.insert_before('<span class="{}">'.format(diag_class),
                              line-1,
                              0)
-            rw.insert_after('</div>', line-1, -1)
+            rw.insert_after('</span>', line-1, -1)
 
 
     fn_decls = [node for node in
@@ -297,10 +297,10 @@ def format_source(src_filename, src, tu, tpl_filename):
         
         start = fd.extent.start
         end = fd.extent.end
-        rw.insert_before('<div class="function_decl">',
+        rw.insert_before('<span class="function_decl">',
                          start.line-1,
                          start.column-1)
-        rw.insert_after('</div>', end.line-1, end.column-1)
+        rw.insert_after('</span>', end.line-1, end.column-1)
 
     code = '\n'.join(rw.lines)
 
