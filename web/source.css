@@ -1,6 +1,10 @@
 body {
   background-color: white;
 }
+code {
+  font-family: Lucida Console, Monaco, monospace;
+  font-size: 11;
+}
 .function_decl {
 }
 .warning {
