@@ -265,9 +265,6 @@ def format_source(src_filename, src, tu, tpl_filename):
                          start.column-1)
         rw.insert_after('</div>', end.line-1, end.column-1)
 
-    for line in range(len(rw.lines)):
-        rw.insert_after("<br />", line=line, col=-1)
-
     code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
