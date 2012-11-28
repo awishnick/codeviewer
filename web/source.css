@@ -6,6 +6,7 @@ code {
   font-size: 11;
 }
 .function_decl {
+  color: black;
 }
 .warning {
   background-color: #ffe699;

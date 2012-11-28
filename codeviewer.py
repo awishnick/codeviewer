@@ -290,19 +290,33 @@ def format_source(src_filename, src, tu, tpl_filename):
             rw.insert_after('</span>', line-1, -1)
 
 
+    # Link declarations without definitions to their definition.
     fn_decls = [node for node in
                 find_cursor_kind(tu.cursor, cindex.CursorKind.FUNCTION_DECL) 
                 if node.location.file.name == src_filename]
     for fd in fn_decls:
-        if not fd.is_definition():
+        if fd.is_definition():
             continue
+
+        defn = fd.get_definition()
+        if defn.location.file.name != src_filename:
+            continue
+        target_hash = defn.hash
         
         start = fd.extent.start
         end = fd.extent.end
-        rw.insert_before('<span class="function_decl">',
+        a_tag = '<a class="function_decl" href="#{}">'.format(target_hash)
+        rw.insert_before(a_tag,
                          start.line-1,
                          start.column-1)
-        rw.insert_after('</span>', end.line-1, end.column-1)
+        rw.insert_after('</a>', end.line-1, end.column-1)
+
+        start = defn.extent.start
+        end = defn.extent.end
+        rw.insert_before('<a id="{}">'.format(target_hash),
+                         start.line-1,
+                         start.column-1)
+        rw.insert_after('</a>', end.line-1, end.column-1)
 
     str_literals = [node for node in
                     find_cursor_kind(tu.cursor,
