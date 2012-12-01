@@ -411,11 +411,19 @@ def generate_outputs(input_dir, output_dir, clang_args):
 
     index = cindex.Index.create()
 
+    tus = {}
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
-        print(rel_src)
+        print('Parsing ' + rel_src)
 
         tu = index.parse(src_filename, args=clang_args)
+        tus[src_filename] = tu
+
+    for src_filename in input_files:
+        rel_src = os.path.relpath(src_filename, input_dir)
+        print('Outputting ' + rel_src)
+
+        tu = tus[src_filename]
 
         with open(src_filename, 'r') as src_file:
             src = src_file.read()
