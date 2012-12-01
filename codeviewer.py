@@ -412,13 +412,16 @@ def generate_outputs(input_dir, output_dir, clang_args):
     index = cindex.Index.create()
 
     for src_filename in input_files:
+        rel_src = os.path.relpath(src_filename, input_dir)
+        print(rel_src)
+
         tu = index.parse(src_filename, args=clang_args)
 
         with open(src_filename, 'r') as src_file:
             src = src_file.read()
 
         output_filename = os.path.join(output_dir,
-                                       '{}.html'.format(src_filename))
+                                       '{}.html'.format(rel_src))
         output_path = os.path.dirname(output_filename)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
@@ -446,7 +449,9 @@ def main(argv):
                         help='the directory to write formatted sources to.')
     args = parser.parse_args(our_args)
 
-    generate_outputs(args.input_dir, args.output_dir, clang_args)
+    generate_outputs(os.path.abspath(args.input_dir),
+                     os.path.abspath(args.output_dir),
+                     clang_args)
 
     return 0
 
