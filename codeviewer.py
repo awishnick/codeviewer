@@ -240,6 +240,10 @@ def get_line_diagnostics(tu):
     """
     diags = {}
     for diag in tu.diagnostics:
+        if diag.location.file is None:
+            continue
+        if diag.location.file.name != tu.spelling:
+            continue
         if diag.severity < cindex.Diagnostic.Warning:
             continue
 
