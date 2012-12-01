@@ -306,6 +306,8 @@ def format_source(src_filename, src, tu, tpl_filename, webpath):
             continue
 
         defn = fd.get_definition()
+        if defn is None:
+            continue
         if defn.location.file.name != src_filename:
             continue
         target_hash = defn.hash
