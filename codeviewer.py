@@ -233,30 +233,38 @@ def find_cursor_kind(node, kind):
 
     return found
 
-def get_line_diagnostics(tu):
-    """Return a dictionary mapping (file, line) to a list of diagnostics.
+def get_line_diagnostics(tus):
+    """Collect all diagnostics across translation units.
+
+    The return value is a dictionary mapping from filename to another dictionary
+    that maps line number to a set of diagnostics at that line.
 
     Each diagnostic is a tuple of (diag_class, message). Diagnostics without any
-    location are filtered out.
+    location are filtered out. Diagnostics with identical messages at the same
+    line of source code will be filtered out so that only one appears.
     """
     diags = {}
-    for diag in tu.diagnostics:
-        if diag.location.file is None:
-            continue
-        if diag.severity < cindex.Diagnostic.Warning:
-            continue
+    for (file, tu) in tus.iteritems():
+        for diag in tu.diagnostics:
+            if diag.location.file is None:
+                continue
+            if diag.severity < cindex.Diagnostic.Warning:
+                continue
+            
+            if diag.severity >= cindex.Diagnostic.Error:
+                diag_class = 'error'
+            else:
+                diag_class = 'warning'
 
-        if diag.severity >= cindex.Diagnostic.Error:
-            diag_class = 'error'
-        else:
-            diag_class = 'warning'
+            filename = diag.location.file.name
+            line = diag.location.line
+            diag_tup = (diag_class, diag.spelling)
 
-        key = (diag.location.file.name, diag.location.line)
-        diag_tup = (diag_class, diag.spelling)
-        if key in diags:
-            diags[key].append(diag_tup)
-        else:
-            diags[key] = [diag_tup]
+            if filename not in diags:
+                diags[filename] = {}
+            if line not in diags[filename]:
+                diags[filename][line] = set()
+            diags[filename][line].add(diag_tup)
 
     return diags
 
@@ -319,12 +327,9 @@ def sanitize_code_as_html(rewriter):
     for (text, from_line, from_col, to_line, to_col) in replacements:
         rewriter.replace(text, from_line, from_col, to_line, to_col)
 
-def highlight_diagnostics(tu, annotation_sets):
+def highlight_diagnostics(tu, diagnostics, annotation_set):
     """Highlight all diagnostics in the translation unit."""
-    for ((file, line), diags) in get_line_diagnostics(tu).iteritems():
-        if file not in annotation_sets:
-            continue
-
+    for (line, diags) in diagnostics.iteritems():
         most_severe_class = None
         for (diag_class, msg) in diags:
             if most_severe_class is None:
@@ -334,7 +339,6 @@ def highlight_diagnostics(tu, annotation_sets):
                 break
 
         messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
-        annotation_set = annotation_sets[file]
         annotation_set.add_tag('span',
                                [
                                     ('class', diag_class),
@@ -433,12 +437,16 @@ def generate_outputs(input_dir, output_dir, clang_args):
         tus[src_filename] = tu
 
     annotation_sets = {src: HTMLAnnotationSet() for src in input_files}
+    diagnostics = get_line_diagnostics(tus) 
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Analyzing ' + rel_src)
 
         tu = tus[src_filename]
-        highlight_diagnostics(tu, annotation_sets)
+        if src_filename in diagnostics:
+            highlight_diagnostics(tu,
+                                  diagnostics[src_filename], 
+                                  annotation_sets[src_filename])
 
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
