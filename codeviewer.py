@@ -234,17 +234,14 @@ def find_cursor_kind(node, kind):
     return found
 
 def get_line_diagnostics(tu):
-    """Return a dictionary mapping line numbers to a list of diagnostics.
+    """Return a dictionary mapping (file, line) to a list of diagnostics.
 
-    Each diagnostic is a tuple of (diag_class, message). Diagnostics appearing
-    outside of the source file corresponding to this translation unit are
-    filtered out, as are diagnostics without any location.
+    Each diagnostic is a tuple of (diag_class, message). Diagnostics without any
+    location are filtered out.
     """
     diags = {}
     for diag in tu.diagnostics:
         if diag.location.file is None:
-            continue
-        if diag.location.file.name != tu.spelling:
             continue
         if diag.severity < cindex.Diagnostic.Warning:
             continue
@@ -254,15 +251,58 @@ def get_line_diagnostics(tu):
         else:
             diag_class = 'warning'
 
+        key = (diag.location.file.name, diag.location.line)
         diag_tup = (diag_class, diag.spelling)
-        line = diag.location.line
-
-        if line in diags:
-            diags[line].append(diag_tup)
+        if key in diags:
+            diags[key].append(diag_tup)
         else:
-            diags[line] = [diag_tup]
+            diags[key] = [diag_tup]
 
     return diags
+
+class LineAndColumn:
+    def __init__(self, line, column):
+        self.line = line
+        self.column = column
+
+class EntireLineSourceLocation:
+    """Looks like a source location, but corresponds to the entire line when fed
+    to an HTMLAnnotationSet."""
+
+    def __init__(self, line):
+        """Initializes with the line number (in clang 1-indexed values)."""
+        self.start = LineAndColumn(line, 1)
+        self.end = LineAndColumn(line, 0)
+
+class HTMLAnnotationSet:
+    """Represents a set of HTML tags to be wrapped around source locations in a
+    given file."""
+    def __init__(self):
+        self.tags = []
+
+    def add_tag(self, tag, attributes, extent):
+        """Add a tag around the given source range.
+        
+        The 'tag' argument is the type of HTML tag to add. Attributes is a list
+        of pairs, where the first element is the attribute name, and the second
+        is the attribute value."""
+        self.tags.append((tag, attributes, extent))
+
+    def apply(self, rewriter):
+        """Apply our set of tags to the rewriter."""
+        for (tag, attributes, extent) in self.tags:
+            start_tag = '<' + tag
+            if attributes:
+                attr = ' '.join([a[0] + '="' + a[1] + '"' for a in attributes])
+                start_tag += ' ' + attr
+            start_tag += '>'
+
+            end_tag = '</' + tag + '>'
+
+            start = extent.start
+            rewriter.insert_before(start_tag, start.line-1, start.column-1)
+            end = extent.end
+            rewriter.insert_after(end_tag, end.line-1, end.column-1)
 
 def sanitize_code_as_html(rewriter):
     """Rewrite all whitespace, <>, etc, so that it's valid HTML."""
@@ -279,61 +319,38 @@ def sanitize_code_as_html(rewriter):
     for (text, from_line, from_col, to_line, to_col) in replacements:
         rewriter.replace(text, from_line, from_col, to_line, to_col)
 
-def highlight_diagnostics(tu, rewriter):
+def highlight_diagnostics(tu, annotation_sets):
     """Highlight all diagnostics in the translation unit."""
-    for (line, diags) in get_line_diagnostics(tu).iteritems():
-        used_classes = set()
-        messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
-        for (diag_class, message) in diags:
-            if diag_class in used_classes:
-                continue
-            used_classes.add(diag_class)
-            span_tag = '<span class="{}" title="{}">'.format(diag_class,
-                                                             messages)
-            rewriter.insert_before(span_tag, line-1, 0)
-            rewriter.insert_after('</span>', line-1, -1)
+    for ((file, line), diags) in get_line_diagnostics(tu).iteritems():
+        if file not in annotation_sets:
+            continue
 
-def format_source(src_filename, src, tu, tpl_filename, webpath):
+        most_severe_class = None
+        for (diag_class, msg) in diags:
+            if most_severe_class is None:
+                most_severe_class = diag_class
+            elif diag_class == 'error':
+                most_severe_class = diag_class
+                break
+
+        messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
+        annotation_set = annotation_sets[file]
+        annotation_set.add_tag('span',
+                               [
+                                    ('class', diag_class),
+                                    ('title', messages),
+                               ],
+                               EntireLineSourceLocation(line))
+
+def format_source(src_filename, src, annotation_set, tpl_filename, webpath):
     """Format source code as HTML using the given template file.
     """
     with open(tpl_filename, 'r') as tpl_file:
         tpl = Template(tpl_file.read())
 
     rw = Rewriter(src)
-
     sanitize_code_as_html(rw)
-    highlight_diagnostics(tu, rw)
-
-    # Link declarations without definitions to their definition.
-    fn_decls = [node for node in
-                find_cursor_kind(tu.cursor, cindex.CursorKind.FUNCTION_DECL) 
-                if node.location.file.name == src_filename]
-    for fd in fn_decls:
-        if fd.is_definition():
-            continue
-
-        defn = fd.get_definition()
-        if defn is None:
-            continue
-        if defn.location.file.name != src_filename:
-            continue
-        target_hash = defn.hash
-        
-        start = fd.extent.start
-        end = fd.extent.end
-        a_tag = '<a class="function_decl" href="#{}">'.format(target_hash)
-        rw.insert_before(a_tag,
-                         start.line-1,
-                         start.column-1)
-        rw.insert_after('</a>', end.line-1, end.column-1)
-
-        start = defn.extent.start
-        end = defn.extent.end
-        rw.insert_before('<a id="{}">'.format(target_hash),
-                         start.line-1,
-                         start.column-1)
-        rw.insert_after('</a>', end.line-1, end.column-1)
-
+    annotation_set.apply(rw)
     code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
@@ -369,7 +386,9 @@ class TestSplitArgs(unittest.TestCase):
         self.assertEqual(split_args(our_args + ['--']), (our_args, []))
 
 def get_source_file_list(dir):
-    """Recursively find all source files in the given directory."""
+    """Recursively find all source files in the given directory.
+    
+    Filenames are all given as absolute paths."""
     extensions = ['h', 'c', 'cc', 'cpp', 'm', 'mm']
     extensions = tuple(['.' + x for x in extensions])
 
@@ -378,7 +397,7 @@ def get_source_file_list(dir):
         files.update([os.path.join(dirpath, name) for name in filenames if
                       name.endswith(extensions)])
 
-    return files
+    return [os.path.abspath(file) for file in files]
 
 def copy_web_resources(output_dir):
     """Copy all the resources in our 'web' directory to the output path."""
@@ -405,7 +424,6 @@ def generate_outputs(input_dir, output_dir, clang_args):
     input_files = get_source_file_list(input_dir)
 
     index = cindex.Index.create()
-
     tus = {}
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
@@ -413,6 +431,14 @@ def generate_outputs(input_dir, output_dir, clang_args):
 
         tu = index.parse(src_filename, args=clang_args)
         tus[src_filename] = tu
+
+    annotation_sets = {src: HTMLAnnotationSet() for src in input_files}
+    for src_filename in input_files:
+        rel_src = os.path.relpath(src_filename, input_dir)
+        print('Analyzing ' + rel_src)
+
+        tu = tus[src_filename]
+        highlight_diagnostics(tu, annotation_sets)
 
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
@@ -434,7 +460,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
         with open(output_filename, 'w') as html_file:
             html_file.write(format_source(src_filename,
                                           src,
-                                          tu,
+                                          annotation_sets[src_filename],
                                           'templates/source.html',
                                           webpath))
 
