@@ -327,18 +327,6 @@ def format_source(src_filename, src, tu, tpl_filename, webpath):
                          start.column-1)
         rw.insert_after('</a>', end.line-1, end.column-1)
 
-    str_literals = [node for node in
-                    find_cursor_kind(tu.cursor,
-                                     cindex.CursorKind.STRING_LITERAL)
-                    if node.location.file.name == src_filename]
-    for str_literal in str_literals:
-        start = str_literal.extent.start
-        end = str_literal.extent.end
-        rw.insert_before('<span class="string_literal">',
-                         start.line-1,
-                         start.column-1)
-        rw.insert_after('</span>', end.line-1, end.column-1)
-
     code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
