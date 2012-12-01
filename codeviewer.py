@@ -236,7 +236,9 @@ def find_cursor_kind(node, kind):
 def get_line_diagnostics(tu):
     """Return a dictionary mapping line numbers to a list of diagnostics.
 
-    Each diagnostic is a tuple of (diag_class, message).
+    Each diagnostic is a tuple of (diag_class, message). Diagnostics appearing
+    outside of the source file corresponding to this translation unit are
+    filtered out, as are diagnostics without any location.
     """
     diags = {}
     for diag in tu.diagnostics:
@@ -262,6 +264,35 @@ def get_line_diagnostics(tu):
 
     return diags
 
+def sanitize_code_as_html(rewriter):
+    """Rewrite all whitespace, <>, etc, so that it's valid HTML."""
+    # Generate a list of whitespace, <>, etc, to rewrite, and do it all at once.
+    # This is because we're searching by position in the rewriter's buffer,
+    # which will get changed once we rewrite it.
+    replacements = []
+    for (line, text) in enumerate(rewriter.lines):
+        for col in [m.start() for m in re.finditer('<', text)]:
+            replacements.append(("&lt;", line, col, line, col+1))
+        for col in [m.start() for m in re.finditer('>', text)]:
+            replacements.append(("&gt;", line, col, line, col+1))
+
+    for (text, from_line, from_col, to_line, to_col) in replacements:
+        rewriter.replace(text, from_line, from_col, to_line, to_col)
+
+def highlight_diagnostics(tu, rewriter):
+    """Highlight all diagnostics in the translation unit."""
+    for (line, diags) in get_line_diagnostics(tu).iteritems():
+        used_classes = set()
+        messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
+        for (diag_class, message) in diags:
+            if diag_class in used_classes:
+                continue
+            used_classes.add(diag_class)
+            span_tag = '<span class="{}" title="{}">'.format(diag_class,
+                                                             messages)
+            rewriter.insert_before(span_tag, line-1, 0)
+            rewriter.insert_after('</span>', line-1, -1)
+
 def format_source(src_filename, src, tu, tpl_filename, webpath):
     """Format source code as HTML using the given template file.
     """
@@ -270,32 +301,8 @@ def format_source(src_filename, src, tu, tpl_filename, webpath):
 
     rw = Rewriter(src)
 
-    # Generate a list of whitespace, <>, etc, to rewrite, and do it all at once.
-    # This is because we're searching by position in the rewriter's buffer,
-    # which will get changed once we rewrite it.
-    replacements = []
-    for (line, text) in enumerate(rw.lines):
-        for col in [m.start() for m in re.finditer('<', text)]:
-            replacements.append(("&lt;", line, col, line, col+1))
-        for col in [m.start() for m in re.finditer('>', text)]:
-            replacements.append(("&gt;", line, col, line, col+1))
-
-    for (text, from_line, from_col, to_line, to_col) in replacements:
-        rw.replace(text, from_line, from_col, to_line, to_col)
-
-    for (line, diags) in get_line_diagnostics(tu).iteritems():
-        used_classes = set()
-        messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
-        for (diag_class, message) in diags:
-            if diag_class in used_classes:
-                continue
-            used_classes.add(diag_class)
-            rw.insert_before('<span class="{}" title="{}">'.format(diag_class,
-                                                                  messages),
-                             line-1,
-                             0)
-            rw.insert_after('</span>', line-1, -1)
-
+    sanitize_code_as_html(rw)
+    highlight_diagnostics(tu, rw)
 
     # Link declarations without definitions to their definition.
     fn_decls = [node for node in
