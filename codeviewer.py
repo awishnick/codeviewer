@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 
+import argparse
 import sys
 import clang.cindex as cindex
 from string import Template
 import bisect
 import unittest
 import re
+import os
+import shutil
 import pdb
 
 class OffsetList:
@@ -255,7 +258,7 @@ def get_line_diagnostics(tu):
 
     return diags
 
-def format_source(src_filename, src, tu, tpl_filename):
+def format_source(src_filename, src, tu, tpl_filename, webpath):
     """Format source code as HTML using the given template file.
     """
     with open(tpl_filename, 'r') as tpl_file:
@@ -333,24 +336,112 @@ def format_source(src_filename, src, tu, tpl_filename):
     code = '\n'.join(rw.lines)
 
     return tpl.substitute(filename=src_filename,
-                          webpath='web',
+                          webpath=webpath,
                           code=code)
 
-def main(argv):
-    src_filename = argv[1]
+def split_args(args):
+    """Split our arguments into (our_args, clang_args).
+
+    The sets of arguments are separated by '--'. We use our_args, and pass along
+    clang_args to clang.
+    """
+    double_dash_pos = [i for i,x in enumerate(args) if x == '--']
+    if not double_dash_pos:
+        return (args, [])
+    else:
+        double_dash_pos = double_dash_pos[0]
+        return (args[:double_dash_pos], args[double_dash_pos+1:])
+
+class TestSplitArgs(unittest.TestCase):
+    def test_no_args(self):
+        self.assertEqual(split_args([]), ([], []))
+
+    def test_both_args(self):
+        our_args = ['--a', 'foo']
+        clang_args = ['-Wall', '-Wextra', '--', 'bar']
+        self.assertEqual(split_args(our_args + ['--'] + clang_args),
+                         (our_args, clang_args))
+
+    def test_no_clang_args(self):
+        our_args = ['--a', 'foo']
+        self.assertEqual(split_args(our_args), (our_args, []))
+        self.assertEqual(split_args(our_args + ['--']), (our_args, []))
+
+def get_source_file_list(dir):
+    """Recursively find all source files in the given directory."""
+    extensions = ['h', 'c', 'cc', 'cpp', 'm', 'mm']
+    extensions = tuple(['.' + x for x in extensions])
+
+    files = set()
+    for (dirpath, dirnames, filenames) in os.walk(dir):
+        files.update([os.path.join(dirpath, name) for name in filenames if
+                      name.endswith(extensions)])
+
+    return files
+
+def copy_web_resources(output_dir):
+    """Copy all the resources in our 'web' directory to the output path."""
+    mypath = os.path.dirname(os.path.realpath(__file__))
+    webpath = os.path.join(mypath, 'web')
+
+    for (dirpath, dirnames, filenames) in os.walk(webpath):
+        relpath = os.path.relpath(dirpath, webpath)
+        tgtpath = os.path.join(output_dir, relpath)
+        if not os.path.exists(tgtpath):
+            os.makedirs(tgtpath)
+
+        for file in [os.path.join(dirpath, filename) for filename in filenames]:
+            shutil.copy(file, tgtpath)            
+
+def generate_outputs(input_dir, output_dir, clang_args):
+    """Read the source files and generate the formatted output."""
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    copy_web_resources(output_dir)
+
+    input_files = get_source_file_list(input_dir)
 
     index = cindex.Index.create()
-    clang_args = ['-Wall', '-Wextra']
-    tu = index.parse(src_filename, args=clang_args)
 
-    with open(src_filename, 'r') as src_file:
-        src = src_file.read()
+    for src_filename in input_files:
+        tu = index.parse(src_filename, args=clang_args)
 
-    with open('{}.html'.format(src_filename), 'w') as html_file:
-        html_file.write(format_source(src_filename,
-                                      src,
-                                      tu,
-                                      'templates/source.html'))
+        with open(src_filename, 'r') as src_file:
+            src = src_file.read()
+
+        output_filename = os.path.join(output_dir,
+                                       '{}.html'.format(src_filename))
+        output_path = os.path.dirname(output_filename)
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
+
+        webpath = os.path.relpath(output_dir, output_path)
+
+        with open(output_filename, 'w') as html_file:
+            html_file.write(format_source(src_filename,
+                                          src,
+                                          tu,
+                                          'templates/source.html',
+                                          webpath))
+
+def main(argv):
+    (our_args, clang_args) = split_args(argv[1:])
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input-dir',
+                        type=str,
+                        required=True,
+                        help='the directory to search for source files.')
+    parser.add_argument('--output-dir',
+                        type=str,
+                        required=True,
+                        help='the directory to write formatted sources to.')
+    args = parser.parse_args(our_args)
+
+    generate_outputs(args.input_dir, args.output_dir, clang_args)
+
     return 0
 
 if __name__ == '__main__':
