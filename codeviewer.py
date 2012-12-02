@@ -551,9 +551,23 @@ def is_header(filename):
     header_extensions = {'h'}
     return os.path.splitext(filename)[1][1:] in header_extensions
 
+def generate_source_index(src_to_output, input_dir, output_dir, output_src_dir,
+                          webpath, tpl_filename):
+    """Create a listing of all source files in output_dir."""
+    with open(tpl_filename, 'r') as tpl_file:
+        tpl = Template(tpl_file.read())
+
+    source_list = (
+        ['<li><a href="{}">{}</a></li>\n'.format(
+            os.path.relpath(output, output_dir),
+            os.path.relpath(src, input_dir))
+        for (src, output) in sorted(src_to_output.iteritems())])
+
+    return tpl.substitute(source_list='\n'.join(source_list),
+                          webpath=webpath)
+
 def generate_outputs(input_dir, output_dir, clang_args):
     """Read the source files and generate the formatted output."""
-
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -629,6 +643,12 @@ def generate_outputs(input_dir, output_dir, clang_args):
                                           annotation_sets[src_filename],
                                           'templates/source.html',
                                           webpath))
+
+    index_filename = os.path.join(output_dir, 'index.html')
+    with open(index_filename, 'w') as index_file:
+        index_file.write(generate_source_index(src_to_output, input_dir, output_dir,
+                                               output_src_dir, webpath,
+                                               'templates/index.html'))
 
 def main(argv):
     (our_args, clang_args) = split_args(argv[1:])
