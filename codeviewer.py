@@ -155,6 +155,14 @@ class Rewriter:
         assert col >= 0
         return col
 
+    def is_in_range(self, line, col):
+        """Return whether the given line/column index is in range."""
+        if line >= len(self.lines):
+            return False
+        if col > self.col_lens[line]:
+            return False
+        return True
+
     @property
     def lines(self):
         """Return the rewritten lines."""
@@ -219,10 +227,23 @@ class TestRewriter(unittest.TestCase):
         self.assertEqual(rw.lines[0], '  std::cout &lt;&lt; "Hello, world!";')
 
 def find_cursor_kind(node, kind):
-    """Return a list of all nodex with the given cursor kind.
-    """
+    """Return a list of all nodes with the given cursor kind."""
     def visitor(node, parent, found):
         if node.kind == kind:
+            found.append(node)
+        return 2
+
+    found = []
+    cindex.Cursor_visit(node,
+                        cindex.Cursor_visit_callback(visitor),
+                        found)
+
+    return found
+
+def find_cursor_kinds(node, kinds):
+    """Return a list of all nodes with one of the given kinds."""
+    def visitor(node, parent, found):
+        if node.kind in kinds:
             found.append(node)
         return 2
 
@@ -299,6 +320,18 @@ class HTMLAnnotationSet:
     def apply(self, rewriter):
         """Apply our set of tags to the rewriter."""
         for (tag, attributes, extent) in self.tags:
+            start = extent.start
+            start_line = start.line - 1
+            start_col = start.column - 1
+            if not rewriter.is_in_range(start_line, start_col):
+                continue
+
+            end = extent.end
+            end_line = end.line - 1
+            end_col = end.column - 1
+            if not rewriter.is_in_range(end_line, end_col):
+                continue
+
             start_tag = '<' + tag
             if attributes:
                 attr = ' '.join([a[0] + '="' + a[1] + '"' for a in attributes])
@@ -307,10 +340,9 @@ class HTMLAnnotationSet:
 
             end_tag = '</' + tag + '>'
 
-            start = extent.start
-            rewriter.insert_before(start_tag, start.line-1, start.column-1)
-            end = extent.end
-            rewriter.insert_after(end_tag, end.line-1, end.column-1)
+
+            rewriter.insert_before(start_tag, start_line, start_col)
+            rewriter.insert_after(end_tag, end_line, end_col)
 
 def sanitize_code_as_html(rewriter):
     """Rewrite all whitespace, <>, etc, so that it's valid HTML."""
@@ -345,6 +377,49 @@ def highlight_diagnostics(tu, diagnostics, annotation_set):
                                     ('title', messages),
                                ],
                                EntireLineSourceLocation(line))
+
+def link_function_calls(tu, annotation_set, src_to_output, anchored_nodes):
+    """Make all function calls link to the function definition.
+    
+    src_to_output should map from absolute source file paths to output file
+    paths suitable for linking to. anchored_nodes will be updated by adding any
+    function definitions that are referenced."""
+    fn_calls = find_cursor_kind(tu.cursor, cindex.CursorKind.CALL_EXPR)
+    fn_calls = [fn for fn in fn_calls if fn.location.file.name == tu.spelling]
+
+    for call in fn_calls:
+        defn = call.get_definition()
+        if defn is None:
+            continue
+
+        file = defn.location.file.name
+        if file not in src_to_output:
+            continue
+
+        target_file = src_to_output[file]
+        target_hash = str(defn.hash)
+        target_href = target_file + '#' + target_hash
+
+        annotation_set.add_tag('a',
+                               [('href', target_href)],
+                               call.extent)
+
+        anchored_nodes[defn.hash] = defn
+
+def add_anchors(annotation_sets, anchored_nodes):
+    """Add an anchor for every node in anchored_nodes.
+
+    This allows us to link to AST nodes.
+    """
+    for (hash, node) in anchored_nodes.iteritems():
+        filename = node.location.file.name
+        if filename not in annotation_sets:
+            continue
+        
+        annotation_set = annotation_sets[filename]
+        annotation_set.add_tag('a',
+                               [('id', str(node.hash))],
+                               node.extent)
 
 def format_source(src_filename, src, annotation_set, tpl_filename, webpath):
     """Format source code as HTML using the given template file.
@@ -437,16 +512,36 @@ def generate_outputs(input_dir, output_dir, clang_args):
         tus[src_filename] = tu
 
     annotation_sets = {src: HTMLAnnotationSet() for src in input_files}
+    anchored_nodes = {}
     diagnostics = get_line_diagnostics(tus) 
+    src_to_output = {
+        src: os.path.join(output_dir, os.path.relpath(src, input_dir)+'.html')
+        for src in input_files
+    }
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Analyzing ' + rel_src)
 
-        tu = tus[src_filename]
+        annotation_set = annotation_sets[src_filename]
+
         if src_filename in diagnostics:
+            tu = tus[src_filename]
             highlight_diagnostics(tu,
                                   diagnostics[src_filename], 
-                                  annotation_sets[src_filename])
+                                  annotation_set)
+
+        output_filename = src_to_output[src_filename]
+        output_path = os.path.dirname(output_filename)
+        rel_src_to_output = {src: os.path.relpath(src_to_output[src],
+                                                  output_path)
+                             for src in src_to_output}
+        link_function_calls(tu,
+                            annotation_set,
+                            rel_src_to_output,
+                            anchored_nodes)
+
+    pdb.set_trace()
+    add_anchors(annotation_sets, anchored_nodes)
 
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
@@ -457,8 +552,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
         with open(src_filename, 'r') as src_file:
             src = src_file.read()
 
-        output_filename = os.path.join(output_dir,
-                                       '{}.html'.format(rel_src))
+        output_filename = src_to_output[src_filename]
         output_path = os.path.dirname(output_filename)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
