@@ -557,7 +557,9 @@ def generate_outputs(input_dir, output_dir, clang_args):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    copy_web_resources(output_dir)
+    output_src_dir = os.path.join(output_dir, 'src/')
+    web_dir = os.path.join(output_dir, 'web/')
+    copy_web_resources(web_dir)
 
     input_files = get_source_file_list(input_dir)
 
@@ -577,7 +579,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
     anchored_nodes = {}
     diagnostics = get_line_diagnostics(tus) 
     src_to_output = {
-        src: os.path.join(output_dir, os.path.relpath(src, input_dir)+'.html')
+        src: os.path.join(output_src_dir, os.path.relpath(src, input_dir)+'.html')
         for src in input_files
     }
     for src_filename in input_files:
@@ -619,7 +621,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
-        webpath = os.path.relpath(output_dir, output_path)
+        webpath = os.path.relpath(web_dir, output_path)
 
         with open(output_filename, 'w') as html_file:
             html_file.write(format_source(src_filename,
