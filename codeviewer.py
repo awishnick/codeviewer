@@ -470,7 +470,7 @@ def add_anchors(annotation_sets, anchored_nodes):
             continue
         
         annotation_set = annotation_sets[filename]
-        annotation_set.add_tag('a',
+        annotation_set.add_tag('span',
                                [('id', str(node.hash))],
                                node.extent)
 
