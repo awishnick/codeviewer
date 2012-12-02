@@ -540,7 +540,6 @@ def generate_outputs(input_dir, output_dir, clang_args):
                             rel_src_to_output,
                             anchored_nodes)
 
-    pdb.set_trace()
     add_anchors(annotation_sets, anchored_nodes)
 
     for src_filename in input_files:
