@@ -474,13 +474,10 @@ def add_anchors(annotation_sets, anchored_nodes):
                                [('id', str(node.hash))],
                                node.extent)
 
-def format_source(src_filename, rel_src_filename, src, annotation_set,
-                  tpl_filename, webpath):
-    """Format source code as HTML using the given template file.
+def format_source(src_filename, rel_src_filename, src, annotation_set, tpl,
+                  webpath):
+    """Format source code as HTML using the given template.
     """
-    with open(tpl_filename, 'r') as tpl_file:
-        tpl = Template(tpl_file.read())
-
     rw = Rewriter(src)
     sanitize_code_as_html(rw)
     annotation_set.apply(rw)
@@ -624,6 +621,9 @@ def generate_outputs(input_dir, output_dir, clang_args):
 
     add_anchors(annotation_sets, anchored_nodes)
 
+    with open('templates/source.html', 'r') as tpl_file:
+        tpl = Template(tpl_file.read())
+
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Outputting ' + rel_src)
@@ -643,7 +643,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
                                           rel_src,
                                           src,
                                           annotation_sets[src_filename],
-                                          'templates/source.html',
+                                          tpl,
                                           webpath))
 
     index_filename = os.path.join(output_dir, 'index.html')
