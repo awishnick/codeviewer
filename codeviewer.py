@@ -11,6 +11,14 @@ import os
 import shutil
 import pdb
 
+# The Python bindings don't expose all libclang functionality. Add some more
+# functions here.
+cindex.Cursor_spellingNameRange = cindex.lib.clang_Cursor_getSpellingNameRange
+cindex.Cursor_spellingNameRange.argtypes = [cindex.Cursor,
+                                            cindex.c_uint,
+                                            cindex.c_uint]
+cindex.Cursor_spellingNameRange.restype = cindex.SourceRange
+
 class OffsetList:
     """Compute offsets from original positions in text to rewritten ones."""
     def __init__(self):
@@ -439,13 +447,15 @@ def link_function_calls(tu, all_nodes, annotation_set, src_to_output,
         if file not in src_to_output:
             continue
 
+        extent = cindex.Cursor_spellingNameRange(call, 0, 0)
+
         target_file = src_to_output[file]
         target_hash = str(defn.hash)
         target_href = target_file + '#' + target_hash
 
         annotation_set.add_tag('a',
                                [('href', target_href)],
-                               call.extent)
+                               extent)
 
         anchored_nodes[defn.hash] = defn
 
