@@ -359,7 +359,7 @@ def sanitize_code_as_html(rewriter):
     for (text, from_line, from_col, to_line, to_col) in replacements:
         rewriter.replace(text, from_line, from_col, to_line, to_col)
 
-def highlight_diagnostics(tu, diagnostics, annotation_set):
+def highlight_diagnostics(diagnostics, annotation_set):
     """Highlight all diagnostics in the translation unit."""
     for (line, diags) in diagnostics.iteritems():
         most_severe_class = None
@@ -378,7 +378,50 @@ def highlight_diagnostics(tu, diagnostics, annotation_set):
                                ],
                                EntireLineSourceLocation(line))
 
-def link_function_calls(tu, annotation_set, src_to_output, anchored_nodes):
+def find_all_usrs(tus, input_files):
+    """Build a map of all nodes in the input files."""
+
+    def visitor(node, parent, nodes):
+        if (node.kind.is_declaration() and
+                node.get_definition()):
+            # Hack. The API doesn't seem to expose a way to query *if* a node is
+            # the definition.
+            if node.get_definition() == node:
+                nodes[node.get_usr()] = node
+
+        return 2
+
+    nodes = {}
+    for (src, tu) in tus.iteritems():
+        cindex.Cursor_visit(tu.cursor,
+                            cindex.Cursor_visit_callback(visitor),
+                            nodes)
+
+    return nodes
+
+def find_reference_definition(reference, all_nodes):
+    """Search through all translation units for the definition of the symbol."""
+    # First try the fast path, which works when the definition is part of this
+    # TU.
+    defn = reference.get_definition()
+    if defn is not None:
+        return defn
+
+    # If the fast path didn't work, fall back on the slow path, where we find
+    # the referenced cursor, which is the declaration that could be seen from
+    # this TU, and then we search all TUs for the definition that matches the
+    # USR.
+    referenced = cindex.Cursor_ref(reference)
+    if referenced is None:
+        return None
+
+    usr = referenced.get_usr()
+    if usr in all_nodes:
+        return all_nodes[usr]
+    return None
+
+def link_function_calls(tu, all_nodes, annotation_set, src_to_output,
+                        anchored_nodes):
     """Make all function calls link to the function definition.
     
     src_to_output should map from absolute source file paths to output file
@@ -388,7 +431,7 @@ def link_function_calls(tu, annotation_set, src_to_output, anchored_nodes):
     fn_calls = [fn for fn in fn_calls if fn.location.file.name == tu.spelling]
 
     for call in fn_calls:
-        defn = call.get_definition()
+        defn = find_reference_definition(call, all_nodes)
         if defn is None:
             continue
 
@@ -492,6 +535,12 @@ def copy_web_resources(output_dir):
         for file in [os.path.join(dirpath, filename) for filename in filenames]:
             shutil.copy(file, tgtpath)            
 
+def is_header(filename):
+    """Return whether the file is a C/C++ header and should not be parsed
+    alone."""
+    header_extensions = {'h'}
+    return os.path.splitext(filename)[1][1:] in header_extensions
+
 def generate_outputs(input_dir, output_dir, clang_args):
     """Read the source files and generate the formatted output."""
 
@@ -508,8 +557,11 @@ def generate_outputs(input_dir, output_dir, clang_args):
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Parsing ' + rel_src)
 
-        tu = index.parse(src_filename, args=clang_args)
-        tus[src_filename] = tu
+        if not is_header(src_filename):
+            tus[src_filename] = index.parse(src_filename, args=clang_args)
+
+    print('Performing cross-translation-unit analysis...')
+    all_nodes = find_all_usrs(tus, input_files)
 
     annotation_sets = {src: HTMLAnnotationSet() for src in input_files}
     anchored_nodes = {}
@@ -525,17 +577,20 @@ def generate_outputs(input_dir, output_dir, clang_args):
         annotation_set = annotation_sets[src_filename]
 
         if src_filename in diagnostics:
-            tu = tus[src_filename]
-            highlight_diagnostics(tu,
-                                  diagnostics[src_filename], 
+            highlight_diagnostics(diagnostics[src_filename], 
                                   annotation_set)
 
+        if src_filename not in tus:
+            continue
+
+        tu = tus[src_filename]
         output_filename = src_to_output[src_filename]
         output_path = os.path.dirname(output_filename)
         rel_src_to_output = {src: os.path.relpath(src_to_output[src],
                                                   output_path)
                              for src in src_to_output}
         link_function_calls(tu,
+                            all_nodes,
                             annotation_set,
                             rel_src_to_output,
                             anchored_nodes)
@@ -545,8 +600,6 @@ def generate_outputs(input_dir, output_dir, clang_args):
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Outputting ' + rel_src)
-
-        tu = tus[src_filename]
 
         with open(src_filename, 'r') as src_file:
             src = src_file.read()
