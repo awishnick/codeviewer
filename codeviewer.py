@@ -658,6 +658,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
                                           web_path,
                                           index_path))
 
+    web_path = os.path.relpath(web_dir, output_dir)
     with open(index_filename, 'w') as index_file:
         index_file.write(generate_source_index(src_to_output, input_dir, output_dir,
                                                output_src_dir, web_path,
