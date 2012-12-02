@@ -474,18 +474,27 @@ def add_anchors(annotation_sets, anchored_nodes):
                                [('id', str(node.hash))],
                                node.extent)
 
-def format_source(src_filename, rel_src_filename, src, annotation_set, tpl,
-                  webpath):
+def format_source(src_filename, src, annotation_set, tpl,
+                  web_path, index_path):
     """Format source code as HTML using the given template.
+
+    src_filename: The name of this source file, as it should be displayed. For
+        display purposes only.
+    src: The source code.
+    annotation_set: The annotation set corresponding to this source file.
+    tpl: The template to use for formatting this page.
+    web_path: The relative path to the web assets.
+    index_path: The relative path to the source index page.
     """
     rw = Rewriter(src)
     sanitize_code_as_html(rw)
     annotation_set.apply(rw)
     code = '\n'.join(rw.lines)
 
-    return tpl.substitute(filename=rel_src_filename,
-                          webpath=webpath,
-                          code=code)
+    return tpl.substitute(filename=src_filename,
+                          web_path=web_path,
+                          code=code,
+                          index_path=index_path)
 
 def split_args(args):
     """Split our arguments into (our_args, clang_args).
@@ -532,10 +541,10 @@ def get_source_file_list(dir):
 def copy_web_resources(output_dir):
     """Copy all the resources in our 'web' directory to the output path."""
     mypath = os.path.dirname(os.path.realpath(__file__))
-    webpath = os.path.join(mypath, 'web')
+    web_path = os.path.join(mypath, 'web')
 
-    for (dirpath, dirnames, filenames) in os.walk(webpath):
-        relpath = os.path.relpath(dirpath, webpath)
+    for (dirpath, dirnames, filenames) in os.walk(web_path):
+        relpath = os.path.relpath(dirpath, web_path)
         tgtpath = os.path.join(output_dir, relpath)
         if not os.path.exists(tgtpath):
             os.makedirs(tgtpath)
@@ -550,7 +559,7 @@ def is_header(filename):
     return os.path.splitext(filename)[1][1:] in header_extensions
 
 def generate_source_index(src_to_output, input_dir, output_dir, output_src_dir,
-                          webpath, tpl_filename):
+                          web_path, tpl_filename):
     """Create a listing of all source files in output_dir."""
     with open(tpl_filename, 'r') as tpl_file:
         tpl = Template(tpl_file.read())
@@ -562,7 +571,7 @@ def generate_source_index(src_to_output, input_dir, output_dir, output_src_dir,
         for (src, output) in sorted(src_to_output.iteritems())])
 
     return tpl.substitute(source_list='\n'.join(source_list),
-                          webpath=webpath)
+                          web_path=web_path)
 
 def generate_outputs(input_dir, output_dir, clang_args):
     """Read the source files and generate the formatted output."""
@@ -624,6 +633,8 @@ def generate_outputs(input_dir, output_dir, clang_args):
     with open('templates/source.html', 'r') as tpl_file:
         tpl = Template(tpl_file.read())
 
+    index_filename = os.path.join(output_dir, 'index.html')
+
     for src_filename in input_files:
         rel_src = os.path.relpath(src_filename, input_dir)
         print('Outputting ' + rel_src)
@@ -636,20 +647,20 @@ def generate_outputs(input_dir, output_dir, clang_args):
         if not os.path.exists(output_path):
             os.makedirs(output_path)
 
-        webpath = os.path.relpath(web_dir, output_path)
+        web_path = os.path.relpath(web_dir, output_path)
+        index_path = os.path.relpath(index_filename, output_path)
 
         with open(output_filename, 'w') as html_file:
-            html_file.write(format_source(src_filename,
-                                          rel_src,
+            html_file.write(format_source(rel_src,
                                           src,
                                           annotation_sets[src_filename],
                                           tpl,
-                                          webpath))
+                                          web_path,
+                                          index_path))
 
-    index_filename = os.path.join(output_dir, 'index.html')
     with open(index_filename, 'w') as index_file:
         index_file.write(generate_source_index(src_to_output, input_dir, output_dir,
-                                               output_src_dir, webpath,
+                                               output_src_dir, web_path,
                                                'templates/index.html'))
 
 def main(argv):
