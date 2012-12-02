@@ -579,6 +579,11 @@ def main(argv):
                         help='the directory to write formatted sources to.')
     args = parser.parse_args(our_args)
 
+    if not os.path.exists(args.input_dir):
+        errmsg = 'Error: The input directory, "{}", does not exist.\n'
+        sys.stderr.write(errmsg.format(args.input_dir))
+        return -1
+
     generate_outputs(os.path.abspath(args.input_dir),
                      os.path.abspath(args.output_dir),
                      clang_args)
