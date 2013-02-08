@@ -4,12 +4,10 @@ import argparse
 import sys
 import clang.cindex as cindex
 from string import Template
-import bisect
 import unittest
 import re
 import os
 import shutil
-import pdb
 
 # The Python bindings don't expose all libclang functionality. Add some more
 # functions here.
@@ -19,6 +17,7 @@ cindex.Cursor_spellingNameRange.argtypes = [cindex.Cursor,
                                             cindex.c_uint]
 cindex.Cursor_spellingNameRange.restype = cindex.SourceRange
 
+
 class OffsetList:
     """Compute offsets from original positions in text to rewritten ones."""
     def __init__(self):
@@ -27,8 +26,8 @@ class OffsetList:
         # the given position.
         self.insertions = {}
 
-        # The removals map from positions where the removal begins to the length
-        # of the text that was removed.
+        # The removals map from positions where the removal begins to the
+        # length of the text that was removed.
         self.removals = {}
 
     def __repr__(self):
@@ -70,6 +69,7 @@ class OffsetList:
         else:
             self.removals[pos] = length
 
+
 class TestOffsetList(unittest.TestCase):
     def test_insert(self):
         ol = OffsetList()
@@ -98,6 +98,7 @@ class TestOffsetList(unittest.TestCase):
         for i in range(2, 5):
             self.assertEqual(ol.get_rewritten_pos(i), i-2)
 
+
 class Rewriter:
     """Rewrite buffers of text, using line/column coordinates.
     """
@@ -113,21 +114,21 @@ class Rewriter:
 
     def insert_before(self, text, line, col):
         """Insert text at the given line/column.
-        
+
         If text has already been inserted there, the new text will go at the
         beginning of the existing text.
         """
         col = self.canonicalize_column_index(line, col)
         col_off = self.col_offs[line]
         adj_col = (col_off.get_rewritten_pos(col) -
-                col_off.get_insertion_length(col))
+                   col_off.get_insertion_length(col))
         theline = self.lines[line]
         self.lines[line] = theline[:adj_col] + text + theline[adj_col:]
         col_off.insert(col, len(text))
 
     def insert_after(self, text, line, col):
         """Insert text at the given line/column.
-        
+
         If text has already been inserted there, the new text will go at the
         end of the existing text.
         """
@@ -176,6 +177,7 @@ class Rewriter:
         """Return the rewritten lines."""
         return self.lines
 
+
 class TestRewriter(unittest.TestCase):
     def test_single_line(self):
         rw = Rewriter("test")
@@ -198,7 +200,7 @@ class TestRewriter(unittest.TestCase):
         rw = Rewriter("0123")
         rw.insert_before("b", line=0, col=2)
         self.assertEqual(rw.lines[0], "01b23")
-        
+
         rw.insert_before("a", line=0, col=2)
         self.assertEqual(rw.lines[0], "01ab23")
 
@@ -234,6 +236,7 @@ class TestRewriter(unittest.TestCase):
         rw.replace("&lt;", 0, 13, 0, 14)
         self.assertEqual(rw.lines[0], '  std::cout &lt;&lt; "Hello, world!";')
 
+
 def find_cursor_kind(node, kind):
     """Return a list of all nodes with the given cursor kind."""
     def visitor(node, parent, found):
@@ -247,6 +250,7 @@ def find_cursor_kind(node, kind):
                         found)
 
     return found
+
 
 def find_cursor_kinds(node, kinds):
     """Return a list of all nodes with one of the given kinds."""
@@ -262,15 +266,16 @@ def find_cursor_kinds(node, kinds):
 
     return found
 
+
 def get_line_diagnostics(tus):
     """Collect all diagnostics across translation units.
 
-    The return value is a dictionary mapping from filename to another dictionary
-    that maps line number to a set of diagnostics at that line.
+    The return value is a dictionary mapping from filename to another
+    dictionary that maps line number to a set of diagnostics at that line.
 
-    Each diagnostic is a tuple of (diag_class, message). Diagnostics without any
-    location are filtered out. Diagnostics with identical messages at the same
-    line of source code will be filtered out so that only one appears.
+    Each diagnostic is a tuple of (diag_class, message). Diagnostics without
+    any location are filtered out. Diagnostics with identical messages at the
+    same line of source code will be filtered out so that only one appears.
     """
     diags = {}
     for (file, tu) in tus.iteritems():
@@ -279,7 +284,7 @@ def get_line_diagnostics(tus):
                 continue
             if diag.severity < cindex.Diagnostic.Warning:
                 continue
-            
+
             if diag.severity >= cindex.Diagnostic.Error:
                 diag_class = 'error'
             else:
@@ -297,19 +302,22 @@ def get_line_diagnostics(tus):
 
     return diags
 
+
 class LineAndColumn:
     def __init__(self, line, column):
         self.line = line
         self.column = column
 
+
 class EntireLineSourceLocation:
-    """Looks like a source location, but corresponds to the entire line when fed
-    to an HTMLAnnotationSet."""
+    """Looks like a source location, but corresponds to the entire line when
+    fed to an HTMLAnnotationSet."""
 
     def __init__(self, line):
         """Initializes with the line number (in clang 1-indexed values)."""
         self.start = LineAndColumn(line, 1)
         self.end = LineAndColumn(line, 0)
+
 
 class HTMLAnnotationSet:
     """Represents a set of HTML tags to be wrapped around source locations in a
@@ -319,7 +327,7 @@ class HTMLAnnotationSet:
 
     def add_tag(self, tag, attributes, extent):
         """Add a tag around the given source range.
-        
+
         The 'tag' argument is the type of HTML tag to add. Attributes is a list
         of pairs, where the first element is the attribute name, and the second
         is the attribute value."""
@@ -348,15 +356,15 @@ class HTMLAnnotationSet:
 
             end_tag = '</' + tag + '>'
 
-
             rewriter.insert_before(start_tag, start_line, start_col)
             rewriter.insert_after(end_tag, end_line, end_col)
 
+
 def sanitize_code_as_html(rewriter):
     """Rewrite all whitespace, <>, etc, so that it's valid HTML."""
-    # Generate a list of whitespace, <>, etc, to rewrite, and do it all at once.
-    # This is because we're searching by position in the rewriter's buffer,
-    # which will get changed once we rewrite it.
+    # Generate a list of whitespace, <>, etc, to rewrite, and do it all at
+    # once. This is because we're searching by position in the rewriter's
+    # buffer, which will get changed once we rewrite it.
     replacements = []
     for (line, text) in enumerate(rewriter.lines):
         for col in [m.start() for m in re.finditer('<', text)]:
@@ -366,6 +374,7 @@ def sanitize_code_as_html(rewriter):
 
     for (text, from_line, from_col, to_line, to_col) in replacements:
         rewriter.replace(text, from_line, from_col, to_line, to_col)
+
 
 def highlight_diagnostics(diagnostics, annotation_set):
     """Highlight all diagnostics in the translation unit."""
@@ -381,10 +390,11 @@ def highlight_diagnostics(diagnostics, annotation_set):
         messages = '<br />'.join([diag[0] + ': ' + diag[1] for diag in diags])
         annotation_set.add_tag('span',
                                [
-                                    ('class', diag_class),
-                                    ('title', messages),
+                                   ('class', diag_class),
+                                   ('title', messages),
                                ],
                                EntireLineSourceLocation(line))
+
 
 def find_all_usrs(tus, input_files):
     """Build a map of all nodes in the input files."""
@@ -392,8 +402,8 @@ def find_all_usrs(tus, input_files):
     def visitor(node, parent, nodes):
         if (node.kind.is_declaration() and
                 node.get_definition()):
-            # Hack. The API doesn't seem to expose a way to query *if* a node is
-            # the definition.
+            # Hack. The API doesn't seem to expose a way to query *if* a node
+            # is the definition.
             if node.get_definition() == node:
                 nodes[node.get_usr()] = node
 
@@ -407,8 +417,9 @@ def find_all_usrs(tus, input_files):
 
     return nodes
 
+
 def find_reference_definition(reference, all_nodes):
-    """Search through all translation units for the definition of the symbol."""
+    """Search through all translation units for the symbol's definition."""
     # First try the fast path, which works when the definition is part of this
     # TU.
     defn = reference.get_definition()
@@ -428,10 +439,11 @@ def find_reference_definition(reference, all_nodes):
         return all_nodes[usr]
     return None
 
+
 def link_function_calls(tu, all_nodes, annotation_set, src_to_output,
                         anchored_nodes):
     """Make all function calls link to the function definition.
-    
+
     src_to_output should map from absolute source file paths to output file
     paths suitable for linking to. anchored_nodes will be updated by adding any
     function definitions that are referenced."""
@@ -459,6 +471,7 @@ def link_function_calls(tu, all_nodes, annotation_set, src_to_output,
 
         anchored_nodes[defn.hash] = defn
 
+
 def add_anchors(annotation_sets, anchored_nodes):
     """Add an anchor for every node in anchored_nodes.
 
@@ -468,11 +481,12 @@ def add_anchors(annotation_sets, anchored_nodes):
         filename = node.location.file.name
         if filename not in annotation_sets:
             continue
-        
+
         annotation_set = annotation_sets[filename]
         annotation_set.add_tag('span',
                                [('id', str(node.hash))],
                                node.extent)
+
 
 def format_source(src_filename, src, annotation_set, tpl,
                   web_path, index_path):
@@ -496,18 +510,20 @@ def format_source(src_filename, src, annotation_set, tpl,
                           code=code,
                           index_path=index_path)
 
+
 def split_args(args):
     """Split our arguments into (our_args, clang_args).
 
-    The sets of arguments are separated by '--'. We use our_args, and pass along
-    clang_args to clang.
+    The sets of arguments are separated by '--'. We use our_args, and pass
+    along clang_args to clang.
     """
-    double_dash_pos = [i for i,x in enumerate(args) if x == '--']
+    double_dash_pos = [i for i, x in enumerate(args) if x == '--']
     if not double_dash_pos:
         return (args, [])
     else:
         double_dash_pos = double_dash_pos[0]
         return (args[:double_dash_pos], args[double_dash_pos+1:])
+
 
 class TestSplitArgs(unittest.TestCase):
     def test_no_args(self):
@@ -524,9 +540,10 @@ class TestSplitArgs(unittest.TestCase):
         self.assertEqual(split_args(our_args), (our_args, []))
         self.assertEqual(split_args(our_args + ['--']), (our_args, []))
 
+
 def get_source_file_list(dir):
     """Recursively find all source files in the given directory.
-    
+
     Filenames are all given as absolute paths."""
     extensions = ['h', 'c', 'cc', 'cpp', 'm', 'mm']
     extensions = tuple(['.' + x for x in extensions])
@@ -537,6 +554,7 @@ def get_source_file_list(dir):
                       name.endswith(extensions)])
 
     return [os.path.abspath(file) for file in files]
+
 
 def copy_web_resources(output_dir):
     """Copy all the resources in our 'web' directory to the output path."""
@@ -549,14 +567,16 @@ def copy_web_resources(output_dir):
         if not os.path.exists(tgtpath):
             os.makedirs(tgtpath)
 
-        for file in [os.path.join(dirpath, filename) for filename in filenames]:
-            shutil.copy(file, tgtpath)            
+        for f in [os.path.join(dirpath, filename) for filename in filenames]:
+            shutil.copy(f, tgtpath)
+
 
 def is_header(filename):
     """Return whether the file is a C/C++ header and should not be parsed
     alone."""
     header_extensions = {'h'}
     return os.path.splitext(filename)[1][1:] in header_extensions
+
 
 def generate_source_index(src_to_output, input_dir, output_dir, output_src_dir,
                           web_path, tpl_filename):
@@ -568,10 +588,11 @@ def generate_source_index(src_to_output, input_dir, output_dir, output_src_dir,
         ['<li><a href="{}">{}</a></li>\n'.format(
             os.path.relpath(output, output_dir),
             os.path.relpath(src, input_dir))
-        for (src, output) in sorted(src_to_output.iteritems())])
+         for (src, output) in sorted(src_to_output.iteritems())])
 
     return tpl.substitute(source_list='\n'.join(source_list),
                           web_path=web_path)
+
 
 def generate_outputs(input_dir, output_dir, clang_args):
     """Read the source files and generate the formatted output."""
@@ -598,9 +619,10 @@ def generate_outputs(input_dir, output_dir, clang_args):
 
     annotation_sets = {src: HTMLAnnotationSet() for src in input_files}
     anchored_nodes = {}
-    diagnostics = get_line_diagnostics(tus) 
+    diagnostics = get_line_diagnostics(tus)
     src_to_output = {
-        src: os.path.join(output_src_dir, os.path.relpath(src, input_dir)+'.html')
+        src: os.path.join(output_src_dir,
+                          os.path.relpath(src, input_dir)+'.html')
         for src in input_files
     }
     for src_filename in input_files:
@@ -610,7 +632,7 @@ def generate_outputs(input_dir, output_dir, clang_args):
         annotation_set = annotation_sets[src_filename]
 
         if src_filename in diagnostics:
-            highlight_diagnostics(diagnostics[src_filename], 
+            highlight_diagnostics(diagnostics[src_filename],
                                   annotation_set)
 
         if src_filename not in tus:
@@ -660,9 +682,11 @@ def generate_outputs(input_dir, output_dir, clang_args):
 
     web_path = os.path.relpath(web_dir, output_dir)
     with open(index_filename, 'w') as index_file:
-        index_file.write(generate_source_index(src_to_output, input_dir, output_dir,
+        index_file.write(generate_source_index(src_to_output, input_dir,
+                                               output_dir,
                                                output_src_dir, web_path,
                                                'templates/index.html'))
+
 
 def main(argv):
     (our_args, clang_args) = split_args(argv[1:])
