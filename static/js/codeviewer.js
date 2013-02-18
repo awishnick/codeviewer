@@ -6,7 +6,7 @@ angular.module('codeviewer', ['services'])
                 templateUrl: 'tpl/sources.html'})
             .when('/sources/:sourceId', {
                 controller: SourceViewCtrl,
-                templateUrl: 'tpl/source_view.html'})
+                templateUrl: 'tpl/sources.html'})
             .otherwise({redirectTo:'/sources'});
     });
 
@@ -15,6 +15,7 @@ function SourcesListCtrl($scope, Sources) {
 }
 
 function SourceViewCtrl($scope, $location, $routeParams, Sources) {
+    $scope.sources = Sources.query();
     Sources.get({id: $routeParams.sourceId}, function(source) {
         $scope.source = source;
     });
