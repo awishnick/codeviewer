@@ -17,6 +17,22 @@
   <div class="span8" ng-show="source">
     <h3>{{source.filename}}</h3>
     <pre>{{source.contents}}</pre>
+    <table class="table table-bordered table-condensed" ng-show="source.diagnostics">
+      <thead>
+        <tr>
+          <th class="span1">Line</th>
+          <th class="span1">Column</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr ng-repeat="diag in source.diagnostics" ng-class="{warning: diag.severity=='Warning', error: diag.severity=='Error'||diag.severity=='Fatal', info: diag.severity=='Note'}">
+          <td>{{diag.location.line}}</td>
+          <td>{{diag.location.column}}</td>
+          <td>{{diag.spelling}}</td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 </div>
 
