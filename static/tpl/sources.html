@@ -7,8 +7,8 @@
         </tr>
       </thead>
       <tbody>
-        <tr ng-repeat="source in sources">
-          <td><a href="#/sources/{{source.id}}">{{source.filename}}</a></td>
+        <tr ng-repeat="curSource in sources" ng-class="{success: curSource.id==source.id}">
+          <td><a href="#/sources/{{curSource.id}}">{{curSource.filename}}</a></td>
         </tr>
       </tbody>
     </table>
