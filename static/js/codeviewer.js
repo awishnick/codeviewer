@@ -54,6 +54,9 @@ function generateEscapeHtmlAnnotations(lines) {
 // Convert token objects to insertions at specified
 // lines and columns.
 function tokensToAnnotations(tokens) {
+    if (!tokens) {
+        return [];
+    }
     var kindToClass = {
         "KEYWORD": "codeview-keyword",
         "COMMENT": "codeview-comment",
