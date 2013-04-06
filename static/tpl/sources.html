@@ -16,7 +16,7 @@
 
   <div class="span8" ng-show="source">
     <h3>{{source.filename}}</h3>
-    <pre>{{source.contents}}</pre>
+    <div ng-bind-html-unsafe="formattedSource"></div>
     <table class="table table-bordered table-condensed" ng-show="source.diagnostics">
       <thead>
         <tr>

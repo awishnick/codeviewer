@@ -152,6 +152,22 @@ def api_show_source(idx):
     if diags:
         obj['diagnostics'] = diags
 
+    try:
+        tu = codeviewer.get_tu_from_id(idx)
+    except KeyError:
+        tu = None
+
+    if tu:
+        extent = tu.get_extent(abs_filename, (0, len(obj['contents'])))
+        tokens = []
+        for token in tu.get_tokens(extent=extent):
+            tokens.append({
+                'extent': token.extent,
+                'spelling': token.spelling,
+                'kind': token.kind.name,
+            })
+        obj['tokens'] = tokens
+
     js = ClangEncoder(codeviewer.input_dir).encode(obj)
     resp = Response(js, mimetype='application/json')
     return resp

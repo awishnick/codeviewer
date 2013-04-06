@@ -34,3 +34,8 @@ nosetests.xml
 
 # Vim temp files
 *.swp
+
+env/
+out/
+test/
+clang/
