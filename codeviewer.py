@@ -9,14 +9,6 @@ import re
 import os
 import shutil
 
-# The Python bindings don't expose all libclang functionality. Add some more
-# functions here.
-cindex.Cursor_spellingNameRange = cindex.lib.clang_Cursor_getSpellingNameRange
-cindex.Cursor_spellingNameRange.argtypes = [cindex.Cursor,
-                                            cindex.c_uint,
-                                            cindex.c_uint]
-cindex.Cursor_spellingNameRange.restype = cindex.SourceRange
-
 
 class OffsetList:
     """Compute offsets from original positions in text to rewritten ones."""
@@ -399,21 +391,23 @@ def highlight_diagnostics(diagnostics, annotation_set):
 def find_all_usrs(tus, input_files):
     """Build a map of all nodes in the input files."""
 
-    def visitor(node, parent, nodes):
+    def visit_children(node, visited_nodes):
+        if node.get_usr() in visited_nodes:
+            return
+        assert node != cindex.conf.lib.clang_getNullCursor()
+
         if (node.kind.is_declaration() and
                 node.get_definition()):
-            # Hack. The API doesn't seem to expose a way to query *if* a node
-            # is the definition.
+            # Hack. The API doesn't seem to expose a way to query *if*
+            # a node is the definition.
             if node.get_definition() == node:
-                nodes[node.get_usr()] = node
-
-        return 2
+                visited_nodes[node.get_usr()] = node
 
     nodes = {}
     for (src, tu) in tus.iteritems():
-        cindex.Cursor_visit(tu.cursor,
-                            cindex.Cursor_visit_callback(visitor),
-                            nodes)
+        cursor = tu.cursor
+        for node in cursor.get_children():
+            visit_children(node, nodes)
 
     return nodes
 

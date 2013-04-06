@@ -13,7 +13,10 @@ codeviewer = None
 
 
 class CodeViewer:
-    def __init__(self, input_dir, clang_args):
+    def __init__(self, input_dir, clang_args, libclang_path=None):
+        if libclang_path:
+            cindex.Config.set_library_path(libclang_path)
+
         self.input_dir = input_dir
         self.index = cindex.Index.create()
         self.tus = {}
@@ -187,6 +190,10 @@ def main(argv):
                         type=str,
                         required=True,
                         help='the directory to write formatted sources to.')
+    parser.add_argument('--clang-path',
+                        type=str,
+                        help='the directory where libclang lives.',
+                        default=None)
     args = parser.parse_args(our_args)
 
     if not os.path.exists(args.input_dir):
@@ -195,7 +202,7 @@ def main(argv):
         return -1
 
     global codeviewer
-    codeviewer = CodeViewer(args.input_dir, clang_args)
+    codeviewer = CodeViewer(args.input_dir, clang_args, args.clang_path)
 
     app.debug = True
     app.run()
