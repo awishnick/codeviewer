@@ -174,6 +174,17 @@ def api_show_source(idx):
             })
         obj['tokens'] = tokens
 
+    def cursor_in_file(cursor):
+        if cursor.location.file is None:
+            return False
+        return cursor.location.file.name == abs_filename
+
+    usrs = {
+        usr: {'displayname': node.displayname, 'extent': node.extent}
+        for usr, node in codeviewer.usrs.items() if
+        cursor_in_file(node)}
+    obj['usrs'] = usrs
+
     js = ClangEncoder(codeviewer.input_dir).encode(obj)
     resp = Response(js, mimetype='application/json')
     return resp
