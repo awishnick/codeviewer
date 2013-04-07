@@ -27,9 +27,15 @@ class CodeViewer:
         self.filenames_to_ids = {src: i for i, src in enumerate(self.sources)}
         self.ids = set(range(len(self.sources)))
 
-        self.tus = {rel: self.index.parse(src, args=clang_args)
-                    for rel, src in zip(self.sources, self.abs_sources)
-                    if not is_header(rel)}
+        def parse_tu(src):
+            if not is_header(src):
+                return self.index.parse(src, args=clang_args)
+            return self.index.parse(
+                src, args=clang_args,
+                options=cindex.TranslationUnit.PARSE_INCOMPLETE)
+
+        self.tus = {rel: parse_tu(src)
+                    for rel, src in zip(self.sources, self.abs_sources)}
 
         self.usrs = find_all_usrs(self.tus, self.sources)
 
